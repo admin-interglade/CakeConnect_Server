@@ -4,6 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    
+  "dev": "nodemon --exec tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -13,14 +17,19 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/admin-interglade/CakeConnect_Server/issues"
   },
   "homepage": "https://github.com/admin-interglade/CakeConnect_Server#readme",
   "devDependencies": {
     "@types/node": "^26.4.0",
+    "nodemon": "^3.1.14",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@types/express": "github:types/express",
+    "express": "^5.2.1"
   }
 }
