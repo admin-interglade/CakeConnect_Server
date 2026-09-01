@@ -1,0 +1,26 @@
+{
+  "name": "cakeconnect_server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/admin-interglade/CakeConnect_Server.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/admin-interglade/CakeConnect_Server/issues"
+  },
+  "homepage": "https://github.com/admin-interglade/CakeConnect_Server#readme",
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
