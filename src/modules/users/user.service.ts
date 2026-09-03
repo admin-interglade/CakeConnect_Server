@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { prisma } from "../../prisma/index.js";
 import {
   NotFoundError,
@@ -21,7 +22,6 @@ export async function createUser(data: {
 
   let passwordHash: string | undefined;
   if (data.password) {
-    const bcrypt = await import("bcryptjs");
     passwordHash = await bcrypt.hash(data.password, 10);
   }
 

@@ -14,6 +14,11 @@ export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
   return success(res, result, "Login successful");
 });
 
+export const login = asyncHandler(async (req: Request, res: Response) => {
+  const result = await authService.loginById(req.body);
+  return success(res, result, "Admin login successful");
+});
+
 export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
   const { refreshToken } = req.body;
   const result = await authService.refreshTokens(refreshToken);

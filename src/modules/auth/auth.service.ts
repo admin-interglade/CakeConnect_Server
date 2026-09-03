@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
 import { prisma } from "../../prisma/index.js";
 import { config } from "../../config/index.js";
 import type { Role, User } from "@prisma/client";
@@ -105,6 +106,42 @@ export async function verifyOTP(data: {
 
   if (user.status === "SUSPENDED") {
     throw new AppError("Account is suspended. Contact support.", 403);
+  }
+
+  const { accessToken, refreshToken, expiresAt } = await createSession(
+    user,
+    data.deviceId,
+    data.fcmToken,
+  );
+
+  return { user: sanitizeUser(user), accessToken, refreshToken, expiresAt };
+}
+
+export async function loginById(data: {
+  mobileNumber: string;
+  password: string;
+  deviceId?: string;
+  fcmToken?: string;
+}) {
+  const user = await prisma.user.findUnique({
+    where: { mobileNumber: data.mobileNumber },
+  });
+
+  if (!user || !user.passwordHash) {
+    throw new UnauthorizedError("Invalid mobile number or password");
+  }
+
+  if (user.role !== "ADMIN") {
+    throw new UnauthorizedError("Only admin users can login with password");
+  }
+
+  if (user.status !== "ACTIVE") {
+    throw new AppError("Account is not active. Contact support.", 403);
+  }
+
+  const valid = await bcrypt.compare(data.password, user.passwordHash);
+  if (!valid) {
+    throw new UnauthorizedError("Invalid mobile number or password");
   }
 
   const { accessToken, refreshToken, expiresAt } = await createSession(
@@ -250,7 +287,6 @@ export async function createAdminUser(data: {
     throw new ConflictError("User with this mobile number already exists");
   }
 
-  const bcrypt = await import("bcryptjs");
   const passwordHash = await bcrypt.hash(data.password, 10);
 
   const user = await prisma.user.create({

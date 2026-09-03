@@ -16,6 +16,15 @@ export const verifyOtpSchema = z.object({
   fcmToken: z.string().optional(),
 });
 
+export const loginSchema = z.object({
+  mobileNumber: z
+    .string()
+    .regex(/^[0-9]{10}$/, "Mobile number must be 10 digits"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  deviceId: z.string().optional(),
+  fcmToken: z.string().optional(),
+});
+
 export const refreshTokenSchema = z.object({
   refreshToken: z.string().min(1, "Refresh token is required"),
 });

@@ -4,6 +4,7 @@ import { validateBody } from "../../common/middleware/validate.js";
 import {
   sendOtpSchema,
   verifyOtpSchema,
+  loginSchema,
   refreshTokenSchema,
   logoutSchema,
 } from "./auth.validator.js";
@@ -14,6 +15,7 @@ export const authRouter = Router();
 
 authRouter.post("/send-otp", otpRateLimiter, validateBody(sendOtpSchema), ctrl.sendOtp);
 authRouter.post("/verify-otp", otpRateLimiter, validateBody(verifyOtpSchema), ctrl.verifyOtp);
+authRouter.post("/login", validateBody(loginSchema), ctrl.login);
 authRouter.post("/refresh-token", validateBody(refreshTokenSchema), ctrl.refreshToken);
 authRouter.post("/logout", validateBody(logoutSchema), ctrl.logout);
 authRouter.get("/me", authenticate, ctrl.me);
