@@ -1,0 +1,43 @@
+import type { Express } from "express";
+import { config } from "../config/index.js";
+import { authRouter } from "./modules/auth/auth.routes.js";
+import { userRouter } from "./modules/users/user.routes.js";
+import { shopRouter } from "./modules/shops/shop.routes.js";
+import { categoryRouter } from "./modules/categories/category.routes.js";
+import { productRouter } from "./modules/products/product.routes.js";
+import { priceListRouter } from "./modules/price-lists/priceList.routes.js";
+import { orderRouter } from "./modules/orders/order.routes.js";
+import { cutoffRouter } from "./modules/cutoff/cutoff.routes.js";
+import { productionRouter } from "./modules/production/production.routes.js";
+import { deliveryRouter } from "./modules/deliveries/delivery.routes.js";
+import { invoiceRouter } from "./modules/invoices/invoice.routes.js";
+import { paymentRouter } from "./modules/payments/payment.routes.js";
+import { ledgerRouter } from "./modules/ledger/ledger.routes.js";
+import { offerRouter } from "./modules/offers/offer.routes.js";
+import { notificationRouter } from "./modules/notifications/notification.routes.js";
+import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
+import { reportRouter } from "./modules/reports/report.routes.js";
+import { auditLogRouter } from "./modules/audit-logs/auditLog.routes.js";
+
+export function setupRoutes(app: Express) {
+  const router = config.apiPrefix;
+
+  app.use(`${router}/auth`, authRouter);
+  app.use(`${router}/users`, userRouter);
+  app.use(`${router}/shops`, shopRouter);
+  app.use(`${router}/categories`, categoryRouter);
+  app.use(`${router}/products`, productRouter);
+  app.use(`${router}/price-lists`, priceListRouter);
+  app.use(`${router}/orders`, orderRouter);
+  app.use(`${router}/cutoff`, cutoffRouter);
+  app.use(`${router}/production-plans`, productionRouter);
+  app.use(`${router}/deliveries`, deliveryRouter);
+  app.use(`${router}/invoices`, invoiceRouter);
+  app.use(`${router}/payments`, paymentRouter);
+  app.use(`${router}/ledger`, ledgerRouter);
+  app.use(`${router}/offers`, offerRouter);
+  app.use(`${router}/notifications`, notificationRouter);
+  app.use(`${router}/dashboard`, dashboardRouter);
+  app.use(`${router}/reports`, reportRouter);
+  app.use(`${router}/audit-logs`, auditLogRouter);
+}

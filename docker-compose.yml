@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cakeconnect_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cakeconnect
+      POSTGRES_PASSWORD: cakeconnect
+      POSTGRES_DB: cakeconnect
+    ports:
+      - "${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - cakeconnect_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cakeconnect -d cakeconnect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: cakeconnect_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT_BIND:-6380}:6379"
+    volumes:
+      - cakeconnect_redisdata:/data
+
+volumes:
+  cakeconnect_pgdata:
+  cakeconnect_redisdata:
