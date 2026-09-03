@@ -1,5 +1,14 @@
 # CakeConnect API - Endpoints Reference
 
+http://localhost:4000/api/v1/auth/login.      post 
+
+{
+  "mobileNumber": "9000000000",
+  "password": "Admin@123",
+  "deviceId": "postman-admin"
+}
+
+
 - **Base URL:** `/api/v1`
 - **Docs (Swagger):** `/docs`
 - **Health:** `GET /health`
@@ -26,7 +35,7 @@ Body:
 { "mobileNumber": "10-digit" }
 ```
 
-### POST `/api/v1/auth/verify-otp` — Verify OTP & login  (Rate limited)
+### POST `/api/v1/auth/verify-otp` — Verify OTP & login (shop owners)  (Rate limited)
 Auth: **None**
 Body:
 ```json
@@ -34,6 +43,19 @@ Body:
   "mobileNumber": "10-digit",
   "otp": "6-digit",
   "name": "optional",
+  "deviceId": "optional",
+  "fcmToken": "optional"
+}
+```
+Returns: `accessToken`, `refreshToken`, `user`
+
+### POST `/api/v1/auth/login` — Admin login with ID + password
+Auth: **None**
+Body:
+```json
+{
+  "mobileNumber": "10-digit (admin user id)",
+  "password": "min 6 chars",
   "deviceId": "optional",
   "fcmToken": "optional"
 }
