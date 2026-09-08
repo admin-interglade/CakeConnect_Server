@@ -9,6 +9,7 @@ export const reportRouter = Router();
 reportRouter.use(authenticate);
 
 reportRouter.get("/sales", validateQuery(reportsQuery), ctrl.sales);
+reportRouter.get("/order-trends", validateQuery(reportsQuery), ctrl.orderTrends);
 reportRouter.get("/outstanding", authorize("ADMIN"), ctrl.outstanding);
 reportRouter.get("/collections", validateQuery(reportsQuery), ctrl.collections);
 reportRouter.get("/cutoff-compliance", authorize("ADMIN"), validateQuery(reportsQuery), ctrl.cutoffCompliance);

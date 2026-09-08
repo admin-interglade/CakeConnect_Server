@@ -59,3 +59,19 @@ export const cutoffCompliance = asyncHandler(async (req: Request, res: Response)
   }
   return success(res, data, "Cut-off compliance report fetched");
 });
+/** FR-21 — the per-day order-value series the admin dashboard charts. */
+export const orderTrends = asyncHandler(async (req: Request, res: Response) => {
+  const data = await reportService.orderTrendReport({
+    from: new Date(req.query.from as string),
+    to: new Date(req.query.to as string),
+    shopId: req.query.shopId as string | undefined,
+    userRole: req.user!.role,
+    shopIds: req.user!.shopIds ?? [],
+  });
+  if (req.query.format === "csv") {
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=order-trend-report.csv");
+    return res.send(data.csv);
+  }
+  return success(res, data, "Order trend fetched");
+});
