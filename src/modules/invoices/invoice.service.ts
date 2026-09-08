@@ -3,8 +3,61 @@ import { prisma } from "../../prisma/index.js";
 import { NotFoundError, ConflictError, AppError } from "../../common/AppError.js";
 import { generateInvoiceNumber } from "../../common/utils/numbers.js";
 import { createLedgerEntry, updateShopOutstanding } from "../ledger/ledger.service.js";
+import { generateInvoicePdf, type InvoicePdfData } from "./pdf.service.js";
+import { createNotification } from "../notifications/notification.service.js";
 
 const TAX_RATE = 0.0;
+
+export async function generatePdfForInvoice(invoiceId: string): Promise<string> {
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    include: {
+      shop: true,
+      order: true,
+      items: true,
+    },
+  });
+  if (!invoice) {
+    throw new NotFoundError("Invoice not found");
+  }
+
+  const data: InvoicePdfData = {
+    invoiceNumber: invoice.invoiceNumber,
+    invoiceDate: invoice.invoiceDate,
+    dueDate: invoice.dueDate,
+    subtotal: invoice.subtotal.toNumber(),
+    taxAmount: invoice.taxAmount.toNumber(),
+    discountAmount: invoice.discountAmount.toNumber(),
+    totalAmount: invoice.totalAmount.toNumber(),
+    shop: {
+      shopName: invoice.shop.shopName,
+      shopCode: invoice.shop.shopCode,
+      address: invoice.shop.address,
+      city: invoice.shop.city,
+      state: invoice.shop.state,
+      pincode: invoice.shop.pincode,
+      gstin: invoice.shop.gstin,
+    },
+    orderNumber: invoice.order?.orderNumber ?? null,
+    items: invoice.items.map((item) => ({
+      productName: item.productName,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice.toNumber(),
+      tax: item.tax.toNumber(),
+      discount: item.discount.toNumber(),
+      totalAmount: item.totalAmount.toNumber(),
+    })),
+  };
+
+  const filePath = await generateInvoicePdf(data);
+
+  await prisma.invoice.update({
+    where: { id: invoice.id },
+    data: { invoicePdfPath: filePath },
+  });
+
+  return filePath;
+}
 
 export async function createInvoice(data: {
   shopId: string;
@@ -74,54 +127,88 @@ export async function createInvoice(data: {
   const totalAmount = subtotal + taxAmount - discountAmount;
   const invoiceNumber = await generateInvoiceNumber();
 
-  return prisma.$transaction(async (tx) => {
-    const invoice = await tx.invoice.create({
-      data: {
-        invoiceNumber,
-        shopId: data.shopId,
-        orderId: order.id,
-        dueDate: data.dueDate,
-        subtotal: new Prisma.Decimal(subtotal),
-        taxAmount: new Prisma.Decimal(taxAmount),
-        discountAmount: new Prisma.Decimal(discountAmount),
-        totalAmount: new Prisma.Decimal(totalAmount),
-        outstandingAmount: new Prisma.Decimal(totalAmount),
-        status: "DRAFT",
-        basedOnDelivered,
-        items: {
-          create: items.map((item) => ({
-            productId: item.productId,
-            productName: item.productName,
-            quantity: item.quantity,
-            unitPrice: new Prisma.Decimal(item.unitPrice),
-            tax: new Prisma.Decimal(item.tax),
-            discount: new Prisma.Decimal(item.discount),
-            totalAmount: new Prisma.Decimal(item.totalAmount),
-          })),
+  const result = await prisma.$transaction(
+    async (tx) => {
+      const invoice = await tx.invoice.create({
+        data: {
+          invoiceNumber,
+          shopId: data.shopId,
+          orderId: order.id,
+          dueDate: data.dueDate,
+          subtotal: new Prisma.Decimal(subtotal),
+          taxAmount: new Prisma.Decimal(taxAmount),
+          discountAmount: new Prisma.Decimal(discountAmount),
+          totalAmount: new Prisma.Decimal(totalAmount),
+          outstandingAmount: new Prisma.Decimal(totalAmount),
+          status: "DRAFT",
+          basedOnDelivered,
+          items: {
+            create: items.map((item) => ({
+              productId: item.productId,
+              productName: item.productName,
+              quantity: item.quantity,
+              unitPrice: new Prisma.Decimal(item.unitPrice),
+              tax: new Prisma.Decimal(item.tax),
+              discount: new Prisma.Decimal(item.discount),
+              totalAmount: new Prisma.Decimal(item.totalAmount),
+            })),
+          },
         },
-      },
-      include: { items: true, shop: true, order: true },
-    });
+        include: { items: true, shop: true, order: true },
+      });
 
-    await tx.order.update({
-      where: { id: order.id },
-      data: { status: "INVOICED" },
-    });
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: "INVOICED" },
+      });
 
-    const ledgerEntry = await createLedgerEntry({
-      shopId: data.shopId,
-      transactionType: "INVOICE",
-      referenceType: "INVOICE",
-      referenceId: invoice.id,
-      debitAmount: totalAmount,
-      description: `Invoice ${invoice.invoiceNumber}`,
-      createdBy: data.createdBy,
-      tx,
-    });
-    await updateShopOutstanding(data.shopId, tx);
+      const ledgerEntry = await createLedgerEntry({
+        shopId: data.shopId,
+        transactionType: "INVOICE",
+        referenceType: "INVOICE",
+        referenceId: invoice.id,
+        debitAmount: totalAmount,
+        description: `Invoice ${invoice.invoiceNumber}`,
+        createdBy: data.createdBy,
+        tx,
+      });
+      await updateShopOutstanding(data.shopId, tx);
 
-    return { invoice, ledgerEntry };
+      return { invoice, ledgerEntry };
+    },
+    { timeout: 15000 },
+  );
+
+  await generatePdfForInvoice(result.invoice.id);
+
+  const withPdf = await prisma.invoice.findUnique({
+    where: { id: result.invoice.id },
+    include: { items: true, shop: true, order: true },
   });
+
+  const shop = withPdf?.shop ?? order.shop;
+  if (shop?.id) {
+    const shopUsers = await prisma.shopUser.findMany({
+      where: { shopId: shop.id },
+      select: { userId: true },
+    });
+    const ownerIds = new Set<string>([...shopUsers.map((u) => u.userId)]);
+    if (shop.ownerId) ownerIds.add(shop.ownerId);
+
+    const invoiceNumber = result.invoice.invoiceNumber;
+    const totalStr = result.invoice.totalAmount.toNumber().toLocaleString("en-IN");
+    for (const userId of ownerIds) {
+      await createNotification({
+        userId,
+        type: "INVOICE_GENERATED",
+        title: "Invoice generated",
+        body: `Invoice ${invoiceNumber} has been generated for ₹${totalStr}`,
+        data: { invoiceId: result.invoice.id, invoiceNumber },
+      });
+    }
+  }
+
+  return { invoice: withPdf ?? result.invoice, ledgerEntry: result.ledgerEntry };
 }
 
 export async function listInvoices(query: {

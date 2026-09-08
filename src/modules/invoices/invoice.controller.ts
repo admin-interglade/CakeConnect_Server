@@ -1,8 +1,10 @@
 import type { Request, Response } from "express";
+import fs from "node:fs";
 import * as invoiceService from "./invoice.service.js";
 import { asyncHandler } from "../../common/asyncHandler.js";
 import { success, paginate, getPagination } from "../../common/response.js";
 import { logAudit } from "../audit-logs/audit.service.js";
+import { AppError } from "../../common/AppError.js";
 
 export const createInvoice = asyncHandler(async (req: Request, res: Response) => {
   const result = await invoiceService.createInvoice({
@@ -62,4 +64,24 @@ export const issueInvoice = asyncHandler(async (req: Request, res: Response) => 
 export const sendInvoice = asyncHandler(async (req: Request, res: Response) => {
   const result = await invoiceService.sendInvoice(req.params.id, req.body.email);
   return success(res, result, "Invoice sent");
+});
+
+export const downloadInvoicePdf = asyncHandler(async (req: Request, res: Response) => {
+  const invoice = await invoiceService.getInvoiceById(
+    req.params.id,
+    req.user?.role,
+    req.user?.shopIds,
+  );
+
+  const filePath =
+    invoice.invoicePdfPath ?? (await invoiceService.generatePdfForInvoice(invoice.id));
+
+  if (!fs.existsSync(filePath)) {
+    throw new AppError("Invoice PDF not found", 404);
+  }
+
+  const filename = `${invoice.invoiceNumber}.pdf`;
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  fs.createReadStream(filePath).pipe(res);
 });

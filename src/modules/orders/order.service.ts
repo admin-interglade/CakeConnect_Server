@@ -12,6 +12,7 @@ import {
   isValidOrderDate,
 } from "../../common/utils/cutoff.js";
 import { getApplicablePrice } from "../price-lists/priceList.service.js";
+import { createInvoice } from "../invoices/invoice.service.js";
 import type { AuthUser } from "../../common/types.js";
 
 const TAX_RATE = 0.0; // Configure GST here e.g. 0.05 for 5% or 0.12 for 12%
@@ -474,6 +475,27 @@ export async function updateOrderStatus(
 
   if (currentIdx >= nextIdx) {
     throw new AppError("Cannot move order backwards in status flow", 400);
+  }
+
+  if (status === "INVOICED") {
+    if (order.invoice) {
+      throw new AppError("Invoice already exists for this order", 400);
+    }
+    if (!order.delivery) {
+      throw new AppError("Cannot invoice an order before it is delivered", 400);
+    }
+    const result = await createInvoice({
+      shopId: order.shop.id,
+      orderId: id,
+      dueDate: order.deliveryDate,
+      basedOnDelivered: true,
+      createdBy: user.userId,
+    });
+    return prisma.order.update({
+      where: { id },
+      data: { status: "INVOICED" as never },
+      include: { items: true, shop: true, invoice: { include: { items: true } } },
+    });
   }
 
   return prisma.order.update({

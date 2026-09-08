@@ -1,6 +1,11 @@
 import dotenv from "dotenv";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 dotenv.config();
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, "../../..");
 
 export const config = {
   nodeEnv: process.env.NODE_ENV || "development",
@@ -33,4 +38,6 @@ export const config = {
   globalCutoffTime: process.env.GLOBAL_CUTOFF_TIME || "22:00",
 
   corsOrigin: process.env.CORS_ORIGIN || "*",
+
+  uploadsDir: process.env.UPLOADS_DIR || path.join(projectRoot, "uploads"),
 };
