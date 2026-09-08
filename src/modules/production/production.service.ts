@@ -16,6 +16,85 @@ export async function listPlans(query: { page: number; limit: number }) {
   return { total, plans };
 }
 
+/** Orders that count towards a day's production, keyed by product. */
+async function aggregateOrdersFor(dateOnly: Date) {
+  const orders = await prisma.order.findMany({
+    where: {
+      deliveryDate: dateOnly,
+      status: { notIn: ["DRAFT", "CANCELLED", "NO_ORDER_PLACED"] },
+    },
+    select: { shopId: true, items: true },
+  });
+
+  const byProduct = new Map<
+    string,
+    { requiredQuantity: number; productName: string; shopIds: Set<string> }
+  >();
+
+  for (const order of orders) {
+    for (const item of order.items) {
+      const current = byProduct.get(item.productId);
+      if (current) {
+        current.requiredQuantity += item.quantity;
+        current.shopIds.add(order.shopId);
+      } else {
+        byProduct.set(item.productId, {
+          requiredQuantity: item.quantity,
+          productName: item.productName,
+          shopIds: new Set([order.shopId]),
+        });
+      }
+    }
+  }
+
+  return byProduct;
+}
+
+/**
+ * The consolidated requirement for a date that has no saved plan yet.
+ *
+ * A plan row is only written by `generatePlan`, which is a deliberate act after
+ * the cut-off. Before that the kitchen still needs to see what is accumulating,
+ * so the read computes the same aggregate live and marks it `generated: false`.
+ * Returning 404 here left the admin dashboard's production card permanently
+ * blank, since nothing generated the plan in the first place.
+ */
+async function buildProvisionalPlan(dateOnly: Date) {
+  const byProduct = await aggregateOrdersFor(dateOnly);
+
+  const products = await prisma.product.findMany({
+    where: { id: { in: Array.from(byProduct.keys()) } },
+  });
+  const productMap = new Map(products.map((p) => [p.id, p]));
+
+  const items = Array.from(byProduct.entries())
+    .map(([productId, entry]) => ({
+      // No row exists yet, so there is no item id to hand out.
+      id: null,
+      productionPlanId: null,
+      productId,
+      requiredQuantity: entry.requiredQuantity,
+      producedQuantity: 0,
+      shopCount: entry.shopIds.size,
+      // Falls back to the name snapshotted on the order line if the product
+      // itself has since been removed.
+      product:
+        productMap.get(productId) ??
+        { name: entry.productName, unit: "", description: null },
+    }))
+    .sort((a, b) => b.requiredQuantity - a.requiredQuantity);
+
+  return {
+    id: null,
+    productionDate: dateOnly,
+    status: "PROVISIONAL" as const,
+    generated: false,
+    createdAt: null,
+    updatedAt: null,
+    items,
+  };
+}
+
 export async function getPlanByDate(date: Date) {
   const dateOnly = new Date(date.toISOString().split("T")[0] + "T00:00:00.000Z");
   const plan = await prisma.productionPlan.findUnique({
@@ -24,10 +103,25 @@ export async function getPlanByDate(date: Date) {
       items: { include: { product: true } },
     },
   });
+
   if (!plan) {
-    throw new NotFoundError("No production plan found for this date");
+    return buildProvisionalPlan(dateOnly);
   }
-  return plan;
+
+  // The saved plan aggregates across shops without recording how many
+  // contributed, so the per-line shop count is recovered from the orders.
+  const byProduct = await aggregateOrdersFor(dateOnly);
+
+  return {
+    ...plan,
+    generated: true,
+    items: plan.items
+      .map((item) => ({
+        ...item,
+        shopCount: byProduct.get(item.productId)?.shopIds.size ?? 0,
+      }))
+      .sort((a, b) => b.requiredQuantity - a.requiredQuantity),
+  };
 }
 
 export async function getPlanById(id: string) {
@@ -53,33 +147,7 @@ export async function generatePlan(productionDate: Date) {
     throw new ConflictError("Production plan already exists for this date");
   }
 
-  const orders = await prisma.order.findMany({
-    where: {
-      deliveryDate: dateOnly,
-      status: { notIn: ["DRAFT", "CANCELLED", "NO_ORDER_PLACED"] },
-    },
-    include: { items: true },
-  });
-
-  const productQuantities = new Map<
-    string,
-    { requiredQuantity: number; productName: string }
-  >();
-
-  for (const order of orders) {
-    for (const item of order.items) {
-      const current = productQuantities.get(item.productId);
-      const productName = current?.productName ?? item.productName;
-      if (current) {
-        current.requiredQuantity += item.quantity;
-      } else {
-        productQuantities.set(item.productId, {
-          requiredQuantity: item.quantity,
-          productName,
-        });
-      }
-    }
-  }
+  const productQuantities = await aggregateOrdersFor(dateOnly);
 
   const plan = await prisma.productionPlan.create({
     data: {
@@ -98,7 +166,7 @@ export async function generatePlan(productionDate: Date) {
     include: { items: { include: { product: true } } },
   });
 
-  return plan;
+  return { ...plan, generated: true };
 }
 
 export async function updatePlan(

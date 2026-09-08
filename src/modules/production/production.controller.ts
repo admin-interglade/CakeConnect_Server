@@ -36,8 +36,22 @@ export const exportPlan = asyncHandler(async (req: Request, res: Response) => {
     "Content-Disposition",
     `attachment; filename=production-plan-${req.params.date}.csv`,
   );
+  // The kitchen works from product names and units, not uuids.
+  const escape = (value: unknown) => {
+    const text = String(value ?? "");
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const header = "productName,unit,requiredQuantity,producedQuantity,shopCount";
   const rows = plan.items.map((item) =>
-    [item.productId, item.requiredQuantity, item.producedQuantity].join(","),
+    [
+      item.product?.name ?? item.productId,
+      item.product?.unit ?? "",
+      item.requiredQuantity,
+      item.producedQuantity,
+      item.shopCount ?? 0,
+    ]
+      .map(escape)
+      .join(","),
   );
-  res.send(`productId,requiredQuantity,producedQuantity\n${rows.join("\n")}`);
+  res.send([header, ...rows].join("\n"));
 });

@@ -11,6 +11,28 @@ function toCSV(headers: string[], rows: unknown[][]) {
   return lines.join("\n");
 }
 
+/** A year of daily points is already past what any chart can render. */
+const MAX_TREND_POINTS = 366;
+
+/** `YYYY-MM-DD` in server-local time, matching the cut-off helpers. */
+function toDayKey(date: Date) {
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function startOfLocalDay(date: Date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function endOfLocalDay(date: Date) {
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
 export async function salesReport(data: {
   from: Date;
   to: Date;
@@ -179,6 +201,79 @@ export async function cutoffComplianceReport(data: { from: Date; to: Date }) {
     csv: toCSV(
       ["orderNumber", "shopCode", "shopName", "deliveryDate", "submittedAt", "onTime"],
       rows.map((r) => [r.orderNumber, r.shopCode, r.shopName, r.deliveryDate, r.submittedAt, r.onTime]),
+    ),
+  };
+}
+/**
+ * FR-21 — order value and count bucketed by day.
+ *
+ * `salesReport` groups by shop and by product, so nothing in it can be drawn
+ * as a time series. This is the missing per-day series (docs/api-gaps.md G5).
+ *
+ * Bucketing is done in JS rather than by `groupBy: ["createdAt"]`, which would
+ * group by exact timestamp and hand back one bucket per order. Days are keyed
+ * in server-local time, the same convention the cut-off helpers use.
+ */
+export async function orderTrendReport(data: {
+  from: Date;
+  to: Date;
+  shopId?: string;
+  userRole: string;
+  shopIds: string[];
+}) {
+  const from = startOfLocalDay(data.from);
+  // `to` arrives as a bare date, which coerces to midnight and would otherwise
+  // drop everything ordered on the last day of the range.
+  const to = endOfLocalDay(data.to);
+
+  const orders = await prisma.order.findMany({
+    where: {
+      createdAt: { gte: from, lte: to },
+      status: { notIn: [OrderStatus.DRAFT, OrderStatus.CANCELLED] },
+      ...(data.userRole === "SHOP_OWNER" ? { shopId: { in: data.shopIds } } : {}),
+      ...(data.shopId && data.userRole !== "SHOP_OWNER" ? { shopId: data.shopId } : {}),
+    },
+    select: { createdAt: true, totalAmount: true },
+  });
+
+  const buckets = new Map<string, { orderValue: number; orderCount: number }>();
+  for (const order of orders) {
+    const key = toDayKey(order.createdAt);
+    const bucket = buckets.get(key) ?? { orderValue: 0, orderCount: 0 };
+    bucket.orderValue += Number(order.totalAmount);
+    bucket.orderCount += 1;
+    buckets.set(key, bucket);
+  }
+
+  // Every day in the range is emitted, including the quiet ones: a chart that
+  // skips empty days draws a flat line through a day of no trade.
+  const points: Array<{ date: string; orderValue: number; orderCount: number }> = [];
+  const cursor = startOfLocalDay(from);
+  const last = startOfLocalDay(to);
+  while (cursor.getTime() <= last.getTime() && points.length < MAX_TREND_POINTS) {
+    const bucket = buckets.get(toDayKey(cursor));
+    points.push({
+      date: toDayKey(cursor),
+      orderValue: bucket?.orderValue ?? 0,
+      orderCount: bucket?.orderCount ?? 0,
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const totalValue = points.reduce((sum, p) => sum + p.orderValue, 0);
+  const totalOrders = points.reduce((sum, p) => sum + p.orderCount, 0);
+
+  return {
+    from: toDayKey(from),
+    to: toDayKey(to),
+    groupBy: "day" as const,
+    totalValue,
+    totalOrders,
+    averageOrderValue: totalOrders > 0 ? totalValue / totalOrders : 0,
+    points,
+    csv: toCSV(
+      ["date", "orderValue", "orderCount"],
+      points.map((p) => [p.date, p.orderValue, p.orderCount]),
     ),
   };
 }
