@@ -10,12 +10,14 @@ export const createOrderSchema = z.object({
   shopId: z.string().uuid(),
   deliveryDate: z.coerce.date(),
   notes: z.string().optional(),
+  offerId: z.string().uuid().optional(),
   items: z.array(orderItemInputSchema).min(1),
 });
 
 export const updateOrderSchema = z.object({
   notes: z.string().optional(),
   deliveryDate: z.coerce.date().optional(),
+  offerId: z.string().uuid().nullable().optional(),
   items: z.array(orderItemInputSchema).min(1).optional(),
 });
 

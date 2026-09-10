@@ -37,6 +37,7 @@ export const updateOrder = asyncHandler(async (req: Request, res: Response) => {
     {
       notes: req.body.notes,
       deliveryDate: req.body.deliveryDate,
+      offerId: req.body.offerId,
       items: req.body.items,
     },
     req.user!,

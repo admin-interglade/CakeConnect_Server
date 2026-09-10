@@ -27,6 +27,7 @@ interface OrderInput {
   shopId: string;
   deliveryDate: Date;
   notes?: string;
+  offerId?: string;
   items: OrderItemInput[];
 }
 
@@ -49,7 +50,11 @@ async function assertShopCanOrder(
   return shop;
 }
 
-async function buildOrderItems(shopId: string, items: OrderItemInput[]) {
+async function buildOrderItems(
+  shopId: string,
+  items: OrderItemInput[],
+  offerId?: string,
+) {
   const productIds = items.map((i) => i.productId);
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
@@ -59,6 +64,26 @@ async function buildOrderItems(shopId: string, items: OrderItemInput[]) {
 
   let subtotal = 0;
   let discountAmount = 0;
+
+  const offer = offerId
+    ? await prisma.offer.findFirst({
+        where: {
+          id: offerId,
+          status: "ACTIVE",
+          startDate: { lte: new Date() },
+          endDate: { gte: new Date() },
+          OR: [
+            { targetAllShops: true },
+            { shops: { some: { shopId } } },
+          ],
+        },
+        include: { products: true },
+      })
+    : null;
+
+  if (offerId && !offer) {
+    throw new AppError("Offer is not active or does not apply to this shop", 400);
+  }
 
   const orderItems: Array<{
     productId: string;
@@ -70,6 +95,7 @@ async function buildOrderItems(shopId: string, items: OrderItemInput[]) {
     totalAmount: number;
     notes?: string;
   }> = [];
+  let flatOfferApplied = false;
 
   for (const item of items) {
     const product = productMap.get(item.productId);
@@ -90,17 +116,43 @@ async function buildOrderItems(shopId: string, items: OrderItemInput[]) {
     const { price } = await getApplicablePrice(shopId, product.id);
     const lineSubtotal = price * item.quantity;
     const tax = lineSubtotal * TAX_RATE;
-    const lineTotal = lineSubtotal + tax;
+    const appliesToProduct =
+      Boolean(offer) &&
+      (offer!.products.length === 0 ||
+        offer!.products.some((offerProduct) => offerProduct.productId === product.id));
+    let lineDiscount = 0;
+
+    if (appliesToProduct && offer!.discountType === "PERCENTAGE") {
+      lineDiscount = lineSubtotal * Number(offer!.discountValue) / 100;
+    } else if (
+      appliesToProduct &&
+      offer!.discountType === "FLAT" &&
+      !flatOfferApplied
+    ) {
+      lineDiscount = Math.min(lineSubtotal, Number(offer!.discountValue));
+      flatOfferApplied = true;
+    } else if (
+      appliesToProduct &&
+      offer!.discountType === "BUY_X_GET_Y" &&
+      offer!.buyQuantity &&
+      offer!.getQuantity
+    ) {
+      const bundle = offer!.buyQuantity + offer!.getQuantity;
+      const freeUnits = Math.floor(item.quantity / bundle) * offer!.getQuantity;
+      lineDiscount = Math.min(lineSubtotal, freeUnits * price);
+    }
+
+    const lineTotal = lineSubtotal + tax - lineDiscount;
 
     subtotal += lineSubtotal;
-    discountAmount += 0;
+    discountAmount += lineDiscount;
     orderItems.push({
       productId: product.id,
       productName: product.name,
       quantity: item.quantity,
       unitPrice: price,
       tax,
-      discount: 0,
+      discount: lineDiscount,
       totalAmount: lineTotal,
       notes: item.notes,
     });
@@ -148,7 +200,7 @@ export async function createDraftOrder(input: OrderInput, user: AuthUser) {
   await checkProductAvailability(input.items, input.deliveryDate);
 
   const { orderItems, subtotal, taxAmount, discountAmount, totalAmount } =
-    await buildOrderItems(input.shopId, input.items);
+    await buildOrderItems(input.shopId, input.items, input.offerId);
 
   const orderNumber = await generateOrderNumber();
 
@@ -162,7 +214,12 @@ export async function createDraftOrder(input: OrderInput, user: AuthUser) {
       taxAmount: new Prisma.Decimal(taxAmount),
       discountAmount: new Prisma.Decimal(discountAmount),
       totalAmount: new Prisma.Decimal(totalAmount),
-      notes: input.notes,
+      notes: [
+        input.notes,
+        input.offerId ? `Offer applied: ${input.offerId}` : undefined,
+      ]
+        .filter(Boolean)
+        .join("\n") || undefined,
       items: {
         create: orderItems.map((item) => ({
           productId: item.productId,
@@ -249,7 +306,12 @@ export async function getOrderById(id: string, user: AuthUser) {
 
 export async function updateDraftOrder(
   id: string,
-  data: { notes?: string; deliveryDate?: Date; items?: OrderItemInput[] },
+  data: {
+    notes?: string;
+    deliveryDate?: Date;
+    offerId?: string | null;
+    items?: OrderItemInput[];
+  },
   user: AuthUser,
 ) {
   const order = await getOrderById(id, user);
@@ -268,8 +330,10 @@ export async function updateDraftOrder(
   let totalAmount = Number(order.totalAmount);
   let deliveryDate = order.deliveryDate;
 
+  const offerId = data.offerId === undefined ? undefined : data.offerId ?? undefined;
+
   if (data.items) {
-    const calc = await buildOrderItems(order.shopId, data.items);
+    const calc = await buildOrderItems(order.shopId, data.items, offerId);
     orderItems = calc.orderItems;
     subtotal = calc.subtotal;
     taxAmount = calc.taxAmount;
