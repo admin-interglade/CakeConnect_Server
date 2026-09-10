@@ -5,6 +5,7 @@ import {
   ConflictError,
   AppError,
 } from "../../common/AppError.js";
+import { hashPassword, issueOwnerCredentials } from "../../common/credentials.js";
 
 export async function createUser(data: {
   name: string;
@@ -20,17 +21,19 @@ export async function createUser(data: {
     throw new ConflictError("User with this mobile number already exists");
   }
 
+  const role = (data.role as "ADMIN" | "SHOP_OWNER" | "SUPPORT_STAFF") || "SHOP_OWNER";
+
   let passwordHash: string | undefined;
   if (data.password) {
     passwordHash = await bcrypt.hash(data.password, 10);
   }
 
-  return prisma.user.create({
+  const created = await prisma.user.create({
     data: {
       name: data.name,
       mobileNumber: data.mobileNumber,
       email: data.email,
-      role: (data.role as "ADMIN" | "SHOP_OWNER" | "SUPPORT_STAFF") || "SHOP_OWNER",
+      role,
       passwordHash,
     },
     select: {
@@ -44,6 +47,24 @@ export async function createUser(data: {
       createdAt: true,
     },
   });
+
+  // A shop owner minted here has no password yet. Generate a one-time password,
+  // email it with the sign-in facts, and force a change on first login. Admin
+  // accounts (which set their own password at sign-up) are left untouched, and
+  // an owner without an email cannot be reached, so no credentials exist for
+  // them until the shop flow records one.
+  if (role === "SHOP_OWNER" && data.email) {
+    const tempPassword = await issueOwnerCredentials({
+      email: data.email,
+      mobileNumber: data.mobileNumber,
+    });
+    await prisma.user.update({
+      where: { id: created.id },
+      data: { passwordHash: await hashPassword(tempPassword), mustChangePassword: true },
+    });
+  }
+
+  return created;
 }
 
 export async function listUsers(query: {

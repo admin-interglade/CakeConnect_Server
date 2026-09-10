@@ -16,7 +16,7 @@ export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const result = await authService.loginById(req.body);
-  return success(res, result, "Admin login successful");
+  return success(res, result, "Login successful");
 });
 
 export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
@@ -34,4 +34,12 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
 export const me = asyncHandler(async (req: Request, res: Response) => {
   const result = await authService.getMe(req.user!.userId);
   return success(res, result, "Profile fetched");
+});
+
+export const changePassword = asyncHandler(async (req: Request, res: Response) => {
+  const result = await authService.changePassword({
+    userId: req.user!.userId,
+    ...req.body,
+  });
+  return success(res, result, "Password updated successfully");
 });

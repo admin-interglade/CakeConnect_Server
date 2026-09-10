@@ -5,6 +5,7 @@ import {
   AppError,
 } from "../../common/AppError.js";
 import type { AuthUser } from "../../common/types.js";
+import { hashPassword, issueOwnerCredentials } from "../../common/credentials.js";
 
 function generateShopCode(name: string): string {
   const clean = name.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 4);
@@ -16,6 +17,7 @@ export async function createShop(data: {
   shopName: string;
   ownerMobileNumber?: string;
   ownerName?: string;
+  ownerEmail?: string;
   mobileNumber: string;
   email?: string;
   address?: string;
@@ -36,6 +38,7 @@ export async function createShop(data: {
   const shopCode = data.shopCode || generateShopCode(data.shopName);
 
   let ownerId: string | undefined;
+  let provisionNewOwner = false;
   if (data.ownerMobileNumber) {
     let owner = await prisma.user.findUnique({
       where: { mobileNumber: data.ownerMobileNumber },
@@ -45,9 +48,11 @@ export async function createShop(data: {
         data: {
           name: data.ownerName || "Shop Owner",
           mobileNumber: data.ownerMobileNumber,
+          email: data.ownerEmail,
           role: "SHOP_OWNER",
         },
       });
+      provisionNewOwner = true;
     }
     ownerId = owner.id;
   }
@@ -76,6 +81,29 @@ export async function createShop(data: {
     await prisma.shopUser.create({
       data: { shopId: shop.id, userId: ownerId, isPrimary: true },
     });
+  }
+
+  // An owner who never received sign-in credentials gets a one-time password
+  // emailed now: either they are brand new (provisionNewOwner) or they were
+  // created before the mail flow existed and still have no password.
+  if (ownerId && data.ownerEmail) {
+    const owner = await prisma.user.findUnique({
+      where: { id: ownerId },
+      select: { email: true, passwordHash: true },
+    });
+    const needsCredentials = provisionNewOwner || !owner?.passwordHash;
+    if (owner && needsCredentials) {
+      const tempPassword = await issueOwnerCredentials({
+        email: data.ownerEmail,
+        mobileNumber: data.ownerMobileNumber!,
+        shopName: data.shopName,
+        shopCode,
+      });
+      await prisma.user.update({
+        where: { id: ownerId },
+        data: { passwordHash: await hashPassword(tempPassword), mustChangePassword: true },
+      });
+    }
   }
 
   if (data.priceListId) {

@@ -159,6 +159,7 @@ model User {
   profileImage String?
   passwordHash String?
   pinHash      String?
+  mustChangePassword Boolean  @default(false)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 

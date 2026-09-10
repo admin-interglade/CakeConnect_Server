@@ -131,10 +131,6 @@ export async function loginById(data: {
     throw new UnauthorizedError("Invalid mobile number or password");
   }
 
-  if (user.role !== "ADMIN") {
-    throw new UnauthorizedError("Only admin users can login with password");
-  }
-
   if (user.status !== "ACTIVE") {
     throw new AppError("Account is not active. Contact support.", 403);
   }
@@ -151,6 +147,49 @@ export async function loginById(data: {
   );
 
   return { user: sanitizeUser(user), accessToken, refreshToken, expiresAt };
+}
+
+/**
+ * Sets a new password, and is the same endpoint for both situations that need
+ * it:
+ *   - the very first login with the emailed one-time password, when
+ *     `mustChangePassword` is set and the app shows "add password + confirm"
+ *     before entering the app; and
+ *   - a voluntary change, when the caller must prove the current password.
+ */
+export async function changePassword(data: {
+  userId: string;
+  currentPassword?: string;
+  newPassword: string;
+}) {
+  if (data.newPassword.length < 8) {
+    throw new AppError("Password must be at least 8 characters", 400);
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: data.userId },
+  });
+  if (!user) {
+    throw new NotFoundError("User not found");
+  }
+
+  if (!user.mustChangePassword) {
+    if (!data.currentPassword || !user.passwordHash) {
+      throw new UnauthorizedError("Current password is required");
+    }
+    const valid = await bcrypt.compare(data.currentPassword, user.passwordHash);
+    if (!valid) {
+      throw new UnauthorizedError("Current password is incorrect");
+    }
+  }
+
+  const passwordHash = await bcrypt.hash(data.newPassword, 10);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash, mustChangePassword: false },
+  });
+
+  return { message: "Password updated successfully" };
 }
 
 async function createSession(
@@ -202,6 +241,7 @@ function sanitizeUser(user: User) {
     role: user.role,
     status: user.status,
     profileImage: user.profileImage,
+    mustChangePassword: user.mustChangePassword,
   };
 }
 

@@ -141,7 +141,7 @@ async function main() {
 
   console.log("Seed complete:");
   console.log(`  Admin:  9000000000 / Admin@123 (ADMIN)`);
-  console.log(`  Owner:  9111111111 / Admin@123 (SHOP_OWNER)`);
+  console.log(`  Owner:  9111111111 / Owner@12345 (SHOP_OWNER, first login sets own password)`);
   console.log(`  Shops:  ${shop1.shopCode}, ${shop2.shopCode}`);
   console.log(`  Price list: ${priceList.name}`);
 }

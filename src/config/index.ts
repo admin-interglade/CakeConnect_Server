@@ -39,5 +39,13 @@ export const config = {
 
   corsOrigin: process.env.CORS_ORIGIN || "*",
 
+  mail: {
+    smtpHost: process.env.MAIL_SMTP_HOST || "",
+    smtpPort: Number(process.env.MAIL_SMTP_PORT) || 587,
+    smtpUser: process.env.MAIL_SMTP_USER || "",
+    smtpPass: process.env.MAIL_SMTP_PASS || "",
+    fromEmail: process.env.MAIL_FROM || "",
+  },
+
   uploadsDir: process.env.UPLOADS_DIR || path.join(projectRoot, "uploads"),
 };

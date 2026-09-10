@@ -7,6 +7,7 @@ import {
   loginSchema,
   refreshTokenSchema,
   logoutSchema,
+  changePasswordSchema,
 } from "./auth.validator.js";
 import { authenticate } from "../../common/middleware/auth.js";
 import { otpRateLimiter } from "../../common/middleware/rateLimiter.js";
@@ -18,4 +19,10 @@ authRouter.post("/verify-otp", otpRateLimiter, validateBody(verifyOtpSchema), ct
 authRouter.post("/login", validateBody(loginSchema), ctrl.login);
 authRouter.post("/refresh-token", validateBody(refreshTokenSchema), ctrl.refreshToken);
 authRouter.post("/logout", validateBody(logoutSchema), ctrl.logout);
+authRouter.post(
+  "/change-password",
+  authenticate,
+  validateBody(changePasswordSchema),
+  ctrl.changePassword,
+);
 authRouter.get("/me", authenticate, ctrl.me);

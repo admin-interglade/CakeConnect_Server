@@ -32,3 +32,8 @@ export const refreshTokenSchema = z.object({
 export const logoutSchema = z.object({
   refreshToken: z.string().min(1, "Refresh token is required"),
 });
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().optional(),
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+});

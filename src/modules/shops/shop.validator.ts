@@ -5,6 +5,7 @@ export const createShopSchema = z.object({
   shopName: z.string().min(1),
   ownerMobileNumber: z.string().regex(/^[0-9]{10}$/).optional(),
   ownerName: z.string().optional(),
+  ownerEmail: z.string().email().optional(),
   mobileNumber: z.string().regex(/^[0-9]{10}$/),
   email: z.string().email().optional(),
   address: z.string().optional(),
