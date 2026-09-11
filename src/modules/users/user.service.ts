@@ -5,7 +5,8 @@ import {
   ConflictError,
   AppError,
 } from "../../common/AppError.js";
-import { hashPassword, issueOwnerCredentials } from "../../common/credentials.js";
+import { generateTempPassword, hashPassword, issueOwnerCredentials } from "../../common/credentials.js";
+import { sendCredentialEmail } from "../../common/mailer.js";
 
 export async function createUser(data: {
   name: string;
@@ -65,6 +66,90 @@ export async function createUser(data: {
   }
 
   return created;
+}
+
+export async function createOwnerWithShops(data: {
+  name: string;
+  mobileNumber: string;
+  email: string;
+  shopIds: string[];
+}) {
+  const existing = await prisma.user.findUnique({
+    where: { mobileNumber: data.mobileNumber },
+  });
+  if (existing) {
+    throw new ConflictError("User with this mobile number already exists");
+  }
+
+  const shops = await prisma.shop.findMany({
+    where: { id: { in: data.shopIds } },
+    select: { id: true, ownerId: true, shopName: true, shopCode: true },
+  });
+  if (shops.length !== data.shopIds.length) {
+    throw new NotFoundError("One or more shops were not found");
+  }
+  if (shops.some(shop => shop.ownerId)) {
+    throw new ConflictError("One or more shops are already assigned to an owner");
+  }
+
+  const tempPassword = generateTempPassword();
+  const passwordHash = await hashPassword(tempPassword);
+  const result = await prisma.$transaction(async tx => {
+    const user = await tx.user.create({
+      data: {
+        name: data.name,
+        mobileNumber: data.mobileNumber,
+        email: data.email,
+        role: "SHOP_OWNER",
+        passwordHash,
+        mustChangePassword: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        mobileNumber: true,
+        email: true,
+        role: true,
+        status: true,
+        profileImage: true,
+        createdAt: true,
+      },
+    });
+
+    for (const shop of shops) {
+      const claimed = await tx.shop.updateMany({
+        where: { id: shop.id, ownerId: null },
+        data: { ownerId: user.id },
+      });
+      if (claimed.count !== 1) {
+        throw new ConflictError("One or more shops were assigned during onboarding");
+      }
+      await tx.shopUser.create({
+        data: { shopId: shop.id, userId: user.id, isPrimary: shop.id === shops[0].id },
+      });
+    }
+
+    return { user, shops };
+  });
+
+  let inviteSent = false;
+  let inviteError: string | undefined;
+  try {
+    inviteSent = await sendCredentialEmail({
+      to: data.email,
+      mobileNumber: data.mobileNumber,
+      tempPassword,
+      shopName: result.shops[0].shopName,
+      shopCode: result.shops[0].shopCode,
+    });
+    if (!inviteSent) {
+      inviteError = "SMTP is not configured; invitation was logged by the server instead";
+    }
+  } catch (error) {
+    inviteError = error instanceof Error ? error.message : "Invitation email failed";
+  }
+
+  return { ...result, inviteSent, inviteError };
 }
 
 export async function listUsers(query: {

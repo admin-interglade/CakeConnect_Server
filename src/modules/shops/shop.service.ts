@@ -6,6 +6,7 @@ import {
 } from "../../common/AppError.js";
 import type { AuthUser } from "../../common/types.js";
 import { hashPassword, issueOwnerCredentials } from "../../common/credentials.js";
+import { sendShopAssignmentEmail } from "../../common/mailer.js";
 
 function generateShopCode(name: string): string {
   const clean = name.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 4);
@@ -302,35 +303,73 @@ export async function setCreditLimit(id: string, data: { creditLimit: number; cr
 }
 
 export async function assignShopOwner(id: string, userId: string) {
-  const shop = await prisma.shop.findUnique({ where: { id } });
+  const shop = await prisma.shop.findUnique({
+    where: { id },
+    select: { id: true, shopCode: true, shopName: true, ownerId: true },
+  });
   if (!shop) {
     throw new NotFoundError("Shop not found");
   }
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true, role: true },
+  });
   if (!user) {
     throw new NotFoundError("User not found");
   }
-
-  const existingAssociation = await prisma.shopUser.findUnique({
-    where: { shopId_userId: { shopId: id, userId } },
-  });
-  if (!existingAssociation) {
-    await prisma.shopUser.create({
-      data: { shopId: id, userId, isPrimary: true },
-    });
+  if (user.role !== "SHOP_OWNER") {
+    throw new AppError("Only a shop owner can be assigned to a shop", 400);
+  }
+  if (shop.ownerId && shop.ownerId !== userId) {
+    throw new ConflictError("Shop is already assigned to another owner");
   }
 
-  return prisma.shop.update({
-    where: { id },
-    data: { ownerId: userId },
-    select: {
-      id: true,
-      shopCode: true,
-      shopName: true,
-      ownerId: true,
-      shopUsers: true,
-    },
+  const result = await prisma.$transaction(async tx => {
+    await tx.shopUser.upsert({
+      where: { shopId_userId: { shopId: id, userId } },
+      create: { shopId: id, userId, isPrimary: true },
+      update: {},
+    });
+    const claimed = await tx.shop.updateMany({
+      where: { id, OR: [{ ownerId: null }, { ownerId: userId }] },
+      data: { ownerId: userId },
+    });
+    if (claimed.count !== 1) {
+      throw new ConflictError("Shop is already assigned to another owner");
+    }
+    return tx.shop.findUniqueOrThrow({
+      where: { id },
+      select: {
+        id: true,
+        shopCode: true,
+        shopName: true,
+        ownerId: true,
+        shopUsers: true,
+      },
+    });
   });
+
+  let inviteSent = false;
+  let inviteError: string | undefined;
+  if (user.email) {
+    try {
+      inviteSent = await sendShopAssignmentEmail({
+        to: user.email,
+        ownerName: user.name,
+        shopName: shop.shopName,
+        shopCode: shop.shopCode,
+      });
+      if (!inviteSent) {
+        inviteError = "SMTP is not configured; assignment email was logged by the server instead";
+      }
+    } catch (error) {
+      inviteError = error instanceof Error ? error.message : "Assignment email failed";
+    }
+  } else {
+    inviteError = "Owner has no email address";
+  }
+
+  return { ...result, inviteSent, inviteError };
 }
 
 export async function assignPriceList(id: string, priceListId: string) {

@@ -18,6 +18,13 @@ function getTransporter(): Transporter | null {
       host: config.mail.smtpHost,
       port: config.mail.smtpPort,
       secure: config.mail.smtpPort === 465,
+      // Callers await the send before answering the admin's request. Without
+      // bounds, nodemailer's defaults (2 min to connect, 10 min idle) let a
+      // stalled SMTP server outlast the app's timeout, so the admin is told the
+      // write failed after it succeeded. Failing fast reports `inviteError`.
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 20_000,
       auth: {
         user: config.mail.smtpUser,
         pass: config.mail.smtpPass,
@@ -33,7 +40,7 @@ export async function sendCredentialEmail(params: {
   tempPassword: string;
   shopName?: string;
   shopCode?: string;
-}) {
+}): Promise<boolean> {
   const shopLine = params.shopName
     ? `Your shop: ${params.shopName}${params.shopCode ? ` (${params.shopCode})` : ""}\n`
     : "";
@@ -62,7 +69,7 @@ export async function sendCredentialEmail(params: {
     console.log(body);
     // eslint-disable-next-line no-console
     console.log("--------------------------------------------------");
-    return;
+    return false;
   }
 
   await t.sendMail({
@@ -71,4 +78,32 @@ export async function sendCredentialEmail(params: {
     subject,
     text: body,
   });
+  return true;
+}
+
+export async function sendShopAssignmentEmail(params: {
+  to: string;
+  ownerName: string;
+  shopName: string;
+  shopCode: string;
+}): Promise<boolean> {
+  const subject = `Shop assigned to your CakeConnect account`;
+  const body = `Hello ${params.ownerName},\n\n` +
+    `The shop ${params.shopName} (${params.shopCode}) has been assigned to your CakeConnect account.\n` +
+    `Sign in with your registered mobile number or existing password.\n\n` +
+    `- CakeConnect`;
+
+  const t = getTransporter();
+  if (!t) {
+    console.log(`[MAIL][dev] Shop assignment for ${params.to}\n${body}`);
+    return false;
+  }
+
+  await t.sendMail({
+    from: config.mail.fromEmail || config.mail.smtpUser,
+    to: params.to,
+    subject,
+    text: body,
+  });
+  return true;
 }

@@ -40,8 +40,10 @@ export async function salesReport(data: {
   userRole: string;
   shopIds: string[];
 }) {
+  const from = startOfLocalDay(data.from);
+  const to = endOfLocalDay(data.to);
   const where = {
-    createdAt: { gte: data.from, lte: data.to },
+    createdAt: { gte: from, lte: to },
     status: { notIn: [OrderStatus.DRAFT, OrderStatus.CANCELLED] },
     ...(data.userRole === "SHOP_OWNER" ? { shopId: { in: data.shopIds } } : {}),
     ...(data.shopId && data.userRole !== "SHOP_OWNER" ? { shopId: data.shopId } : {}),

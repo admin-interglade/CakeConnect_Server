@@ -3,6 +3,7 @@ import * as ctrl from "./user.controller.js";
 import { validateBody, validateParams } from "../../common/middleware/validate.js";
 import {
   createUserSchema,
+  createOwnerSchema,
   updateProfileSchema,
   updateUserSchema,
   statusSchema,
@@ -15,6 +16,7 @@ export const userRouter = Router();
 userRouter.use(authenticate);
 
 userRouter.post("/", authorize("ADMIN"), validateBody(createUserSchema), ctrl.createUser);
+userRouter.post("/owners", authorize("ADMIN"), validateBody(createOwnerSchema), ctrl.createOwner);
 userRouter.get("/", authorize("ADMIN", "SUPPORT_STAFF"), ctrl.listUsers);
 userRouter.patch("/profile", validateBody(updateProfileSchema), ctrl.updateProfile);
 userRouter.get("/:id", authorize("ADMIN", "SUPPORT_STAFF"), validateParams(userIdParams), ctrl.getUser);

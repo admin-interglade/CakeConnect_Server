@@ -8,6 +8,13 @@ export const createUserSchema = z.object({
   password: z.string().min(6).optional(),
 });
 
+export const createOwnerSchema = z.object({
+  name: z.string().min(1),
+  mobileNumber: z.string().regex(/^[0-9]{10}$/),
+  email: z.string().email(),
+  shopIds: z.array(z.string().uuid()).min(1),
+});
+
 export const updateProfileSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),
