@@ -79,3 +79,18 @@ export const setStatus = asyncHandler(async (req: Request, res: Response) => {
   );
   return success(res, user, "User status updated");
 });
+
+export const createOwner = asyncHandler(async (req: Request, res: Response) => {
+  const result = await userService.createOwnerWithShops(req.body);
+  await logAudit(
+    {
+      actorId: req.user!.userId,
+      action: "OWNER_CREATED_AND_ASSIGNED",
+      entityType: "User",
+      entityId: result.user.id,
+      newValue: result,
+    },
+    req,
+  );
+  return success(res, result, "Shop owner created and invited", 201);
+});
