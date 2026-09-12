@@ -40,6 +40,7 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
   const before = await userService.getUserById(req.params.id);
   const user = await userService.updateUser(req.params.id, {
     name: req.body.name,
+    mobileNumber: req.body.mobileNumber,
     email: req.body.email,
     role: req.body.role,
     status: req.body.status,

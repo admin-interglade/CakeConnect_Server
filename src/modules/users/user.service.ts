@@ -187,6 +187,15 @@ export async function listUsers(query: {
         status: true,
         profileImage: true,
         createdAt: true,
+        // The admin's owner directory shows each owner with their outlets, so
+        // the list carries the association rather than costing one read per row.
+        shopUsers: {
+          select: {
+            shopId: true,
+            isPrimary: true,
+            shop: { select: { id: true, shopName: true, shopCode: true } },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -221,6 +230,7 @@ export async function updateUser(
   id: string,
   data: {
     name?: string;
+    mobileNumber?: string;
     email?: string;
     role?: string;
     status?: string;
@@ -230,10 +240,33 @@ export async function updateUser(
   if (!existing) {
     throw new NotFoundError("User not found");
   }
+
+  // Both are unique and the mobile number is the sign-in identifier, so a
+  // clash is reported as a conflict rather than surfacing as a database error.
+  if (data.mobileNumber && data.mobileNumber !== existing.mobileNumber) {
+    const taken = await prisma.user.findUnique({
+      where: { mobileNumber: data.mobileNumber },
+      select: { id: true },
+    });
+    if (taken) {
+      throw new ConflictError("User with this mobile number already exists");
+    }
+  }
+  if (data.email && data.email !== existing.email) {
+    const taken = await prisma.user.findUnique({
+      where: { email: data.email },
+      select: { id: true },
+    });
+    if (taken) {
+      throw new ConflictError("User with this email already exists");
+    }
+  }
+
   return prisma.user.update({
     where: { id },
     data: {
       ...(data.name ? { name: data.name } : {}),
+      ...(data.mobileNumber ? { mobileNumber: data.mobileNumber } : {}),
       ...(data.email !== undefined ? { email: data.email } : {}),
       ...(data.role ? { role: data.role as never } : {}),
       ...(data.status ? { status: data.status as never } : {}),
