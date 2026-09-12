@@ -251,14 +251,28 @@ export async function getOrders(query: {
   search?: string;
   user: AuthUser;
 }) {
+  const search = query.search?.trim();
   const where: Prisma.OrderWhereInput = {
     ...(query.status ? { status: query.status as never } : {}),
     ...(query.shopId ? { shopId: query.shopId } : {}),
     ...(query.deliveryDate
       ? { deliveryDate: normalizeDate(query.deliveryDate) }
       : {}),
-    ...(query.search
-      ? { orderNumber: { contains: query.search, mode: "insensitive" as const } }
+    // The queue's search box offers shop, order ID and item, so all three are
+    // matched — the order number alone left shop and item searches empty.
+    ...(search
+      ? {
+          OR: [
+            { orderNumber: { contains: search, mode: "insensitive" as const } },
+            { shop: { shopName: { contains: search, mode: "insensitive" as const } } },
+            { shop: { shopCode: { contains: search, mode: "insensitive" as const } } },
+            {
+              items: {
+                some: { productName: { contains: search, mode: "insensitive" as const } },
+              },
+            },
+          ],
+        }
       : {}),
   };
 
