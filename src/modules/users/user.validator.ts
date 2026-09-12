@@ -23,6 +23,7 @@ export const updateProfileSchema = z.object({
 
 export const updateUserSchema = z.object({
   name: z.string().min(1).optional(),
+  mobileNumber: z.string().regex(/^[0-9]{10}$/, "Mobile number must be 10 digits").optional(),
   email: z.string().email().optional(),
   role: z.enum(["ADMIN", "SHOP_OWNER", "SUPPORT_STAFF"]).optional(),
   status: z.enum(["ACTIVE", "SUSPENDED", "INACTIVE"]).optional(),
